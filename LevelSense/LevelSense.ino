@@ -2,11 +2,11 @@
 #include <WebSocketsClient.h>
 
 // Configuración de la red WiFi
-const char* ssid = "JA";              // Nombre de la red (SSID)
-const char* password = "juanpro123";  // Contraseña de la red
+const char* ssid = "JUANET";              // Nombre de la red (SSID)
+const char* password = "5241856500";  // Contraseña de la red
 
 // Configuración del servidor WebSocket
-const char* websocket_server = "192.168.14.190";  // IP del servidor
+const char* websocket_server = "192.168.0.101";  // IP del servidor
 const uint16_t websocket_port = 8765;          // Puerto del servidor
 
 WebSocketsClient webSocket;
