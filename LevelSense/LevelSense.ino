@@ -2,18 +2,32 @@
 #include <WebSocketsClient.h>
 
 // Configuración de la red WiFi
-const char* ssid = "JUANET";              // Nombre de la red (SSID)
-const char* password = "5241856500";  // Contraseña de la red
+const char* ssid = "JUANET";
+const char* password = "5241856500";
 
 // Configuración del servidor WebSocket
-const char* websocket_server = "192.168.0.101";  // IP del servidor
-const uint16_t websocket_port = 8765;          // Puerto del servidor
+// (Nota: Esta IP puede cambiar según tu red; para pruebas, asegúrate de que sea la IP del servidor Python)
+const char* websocket_server = "192.168.0.100";
+const uint16_t websocket_port = 8765;
 
 WebSocketsClient webSocket;
 
+// Variables de configuración del recipiente (en cm)
+float containerHeight = 30.0;   // Altura máxima del recipiente
+float containerDiameter = 10.0; // Diámetro del recipiente
+
+// Variables de simulación
+float waterLevel = 0.0;  // Nivel actual de agua (cm)
+int direction = 1;       // 1 = subiendo, -1 = bajando
+int actuatorPower = 0;   // Potencia del actuador (-100 a 100)
+
+unsigned long previousMillis = 0;
+const long interval = 1000;  // Actualizar cada 1 segundo
+
 // Manejo de eventos del WebSocket
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-  switch (type) {
+  String msg = String((char*)payload);
+  switch(type) {
     case WStype_DISCONNECTED:
       Serial.println("Desconectado del WebSocket!");
       break;
@@ -23,11 +37,31 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       webSocket.sendTXT("ESP32 conectado");
       break;
     case WStype_TEXT:
-      Serial.printf("Mensaje recibido: %s\n", payload);
-      // Si se recibe el comando "RESET", reiniciar el ESP32
-      if (strcmp((char*)payload, "RESET") == 0) {
-        Serial.println("Reiniciando ESP32...");
-        ESP.restart();
+      Serial.print("Mensaje recibido: ");
+      Serial.println(msg);
+      // Si se recibe una configuración nueva, por ejemplo: "CONFIG:35,12"
+      if (msg.startsWith("CONFIG:")) {
+        String configStr = msg.substring(7);
+        int commaIndex = configStr.indexOf(",");
+        if (commaIndex != -1) {
+          String heightStr = configStr.substring(0, commaIndex);
+          String diameterStr = configStr.substring(commaIndex + 1);
+          containerHeight = heightStr.toFloat();
+          containerDiameter = diameterStr.toFloat();
+          Serial.print("Nueva altura máxima: ");
+          Serial.println(containerHeight);
+          Serial.print("Nuevo diámetro: ");
+          Serial.println(containerDiameter);
+        }
+      }
+      // Si se recibe un nuevo setpoint para la altura, por ejemplo: "NEW_HEIGHT:15.5"
+      else if (msg.startsWith("NEW_HEIGHT:")) {
+        String heightStr = msg.substring(strlen("NEW_HEIGHT:"));
+        float newHeight = heightStr.toFloat();
+        // Actualizamos el nivel actual para simular el nuevo setpoint
+        waterLevel = newHeight;
+        Serial.print("Nuevo setpoint recibido: ");
+        Serial.println(newHeight);
       }
       break;
     case WStype_ERROR:
@@ -38,7 +72,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   }
 }
 
-// Función para conectar a la red WiFi
 void connectToWiFi() {
   Serial.print("Conectando a WiFi: ");
   Serial.println(ssid);
@@ -52,39 +85,42 @@ void connectToWiFi() {
   Serial.println(WiFi.localIP());
 }
 
-unsigned long previousMillis = 0;
-const long interval = 1000;  // Envío de datos cada 1 segundo
-
 void setup() {
   Serial.begin(115200);
-  // Conectar a WiFi
   connectToWiFi();
 
-  // Inicializar conexión WebSocket
   webSocket.begin(websocket_server, websocket_port, "/");
-  // Configura reconexión automática cada 5 segundos si se pierde
   webSocket.setReconnectInterval(5000);
   webSocket.onEvent(webSocketEvent);
 }
 
 void loop() {
-  // Verificar que WiFi siga conectado, y reconectar en caso contrario
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi desconectado. Reintentando conexión...");
+    Serial.println("WiFi desconectado. Reintentando...");
     connectToWiFi();
   }
-
-  // Procesar eventos del WebSocket
   webSocket.loop();
 
-  // Enviar datos simulados cada segundo
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
-    int nivel_liquido = random(0, 101);  // Nivel simulado entre 0 y 100%
-    String mensaje = "Nivel: " + String(nivel_liquido) + "%";
-    Serial.println("Enviando: " + mensaje);
     
+    // Simular cambios en el nivel de agua
+    waterLevel += direction * 1.0;
+    if (waterLevel >= containerHeight) {
+      waterLevel = containerHeight;
+      direction = -1;
+    } else if (waterLevel <= 0) {
+      waterLevel = 0;
+      direction = 1;
+    }
+    
+    actuatorPower = (direction == 1) ? 100 : -100;
+    
+    // Enviar mensaje en formato JSON: [nivel, potencia]
+    String mensaje = "[" + String(waterLevel, 1) + "," + String(actuatorPower) + "]";
+    Serial.print("Enviando: ");
+    Serial.println(mensaje);
     if (webSocket.isConnected()) {
       webSocket.sendTXT(mensaje);
     } else {
