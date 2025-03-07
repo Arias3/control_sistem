@@ -3,124 +3,160 @@ import asyncio
 import websockets
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar
 from PyQt5.QtGui import QPixmap, QFont, QColor
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
+import math
+import threading
+import json
 
+# ========================== BACKEND - WEBSOCKET ==========================
+class WebSocketServer:
+    def __init__(self, ui_callback):
+        """Inicializa el servidor WebSocket en un hilo separado"""
+        self.ui_callback = ui_callback  # Función para actualizar la UI
+        self.thread = threading.Thread(target=self.run_server, daemon=True)
+        self.thread.start()
+
+    def run_server(self):
+        """Ejecuta el servidor WebSocket en segundo plano"""
+        asyncio.run(self.websocket_server())
+
+    async def websocket_server(self):
+        """Lógica de comunicación WebSocket"""
+        async def websocket_handler(websocket):
+            async for message in websocket:
+                try:
+                    parsed = json.loads(message)
+                    altura = float(parsed[0]) if len(parsed) > 0 else 0.0
+                except (json.JSONDecodeError, ValueError, IndexError):
+                    altura = 0.0
+
+                # Llama a la función de actualización de UI
+                self.ui_callback(altura)
+
+        server = await websockets.serve(websocket_handler, "0.0.0.0", 8765)
+        print("Servidor WebSocket corriendo en 0.0.0.0:8765")
+        await server.wait_closed()
+
+
+# ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
 class ModernWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
-        # Configurar título
+
+        # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
-        
-        # Ajustar tamaño inicial y permitir redimensionamiento
         self.setMinimumSize(800, 600)
         self.resize(1200, 700)
-        
-        # Widget central
+
+        # Inicializar variables
+        self.altura_maxima = 30  # cm
+        self.diametro = 10  # cm
+        self.altura_actual = 0  # cm
+        self.volumen_maximo = math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima
+
+        # Crear interfaz gráfica
+        self.setup_ui()
+
+        # Iniciar WebSocket en segundo plano
+        self.websocket_server = WebSocketServer(self.update_values)
+
+    def setup_ui(self):
+        """Configura la interfaz gráfica"""
         central_widget = QWidget()
-        central_widget.setStyleSheet("background-color: #435585;")  # Cambiar color de fondo
+        central_widget.setStyleSheet("background-color: #435585;")  
         self.setCentralWidget(central_widget)
-        
+
         # Layout principal
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)  # Margen respecto a los bordes
+        main_layout.setContentsMargins(20, 20, 20, 20)
         central_widget.setLayout(main_layout)
-        
-        # Crear Header
+
+        # Header
         self.header = QWidget()
-        self.header.setFixedHeight(80)  # Altura del header
-        self.header.setStyleSheet("""
-            background-color: #363062;
-            border-radius: 10px;
-        """)
-        
-        # Sombra para el header
+        self.header.setFixedHeight(80)
+        self.header.setStyleSheet("background-color: #363062; border-radius: 10px;")
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(10)
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 3)
         self.header.setGraphicsEffect(shadow)
-        
-        # Layout del header
+
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(20, 10, 20, 10)
         self.header.setLayout(header_layout)
-        
+
         # Logo
         self.logo = QLabel()
         pixmap = QPixmap("./Media/logo.png").scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.logo.setPixmap(pixmap)
         self.logo.setFixedSize(60, 60)
-        
-        # Texto del título
+
+        # Título
         self.title = QLabel("Level Sense")
         self.title.setFont(QFont("Roboto", 26, QFont.Bold))
         self.title.setStyleSheet("color: #D8DEE9;")
-        
-        # Agregar elementos al header
+
         header_layout.addWidget(self.logo)
         header_layout.addSpacing(10)
         header_layout.addWidget(self.title)
         header_layout.addStretch()
-        
-        # Agregar header al layout principal
+
         main_layout.addWidget(self.header)
-        main_layout.addSpacing(20)  # Espacio entre header y contenido
-        
-        # Layout de contenido con dos secciones (30/70)
+        main_layout.addSpacing(20)
+
+        # Layout de contenido
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout)
-        
+
         # Sección izquierda (30%)
         self.left_section = QVBoxLayout()
-        
+
         for i in range(3):
             block = QWidget()
             block.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
             block_layout = QVBoxLayout()
-            
-            # Aplicar sombra
+
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(10)
             shadow.setColor(QColor(0, 0, 0, 150))
             shadow.setOffset(0, 3)
             block.setGraphicsEffect(shadow)
-            
+
             if i == 0:
                 inner_layout = QHBoxLayout()
-                
-                # Crear los tres bloques internos con valores iniciales en 0
+
+                # Inicializar valores
                 self.values = {
                     "Volumen": "0 L",
                     "Porcentaje": "0%",
                     "Altura": "0 m"
                 }
-                
+
                 self.labels = {}
-                
+
                 for title in self.values:
                     sub_block = QWidget()
                     sub_block.setStyleSheet("background-color: #B0B7E3; border-radius: 10px;")
                     sub_layout = QVBoxLayout()
-                    
+
                     label_title = QLabel(title)
                     label_title.setFont(QFont("Roboto", 12))
                     label_title.setStyleSheet("color: black;")
-                    
+
                     label_value = QLabel(self.values[title])
                     label_value.setFont(QFont("Roboto", 18, QFont.Bold))
                     label_value.setStyleSheet("color: black;")
-                    
-                    self.labels[title] = label_value  # Guardar referencia
-                    
+
+                    self.labels[title] = label_value  
+
                     sub_layout.addWidget(label_title, alignment=Qt.AlignCenter)
                     sub_layout.addWidget(label_value, alignment=Qt.AlignCenter)
                     sub_block.setLayout(sub_layout)
-                    
+
                     inner_layout.addWidget(sub_block)
-                
+
                 block_layout.addLayout(inner_layout)
-            
             elif i == 1:
                 # Contenedor de barras de progreso
                 progress_container = QHBoxLayout()
@@ -176,28 +212,38 @@ class ModernWindow(QMainWindow):
             
             block.setLayout(block_layout)
             self.left_section.addWidget(block)
-        
+
         left_widget = QWidget()
         left_widget.setLayout(self.left_section)
-        
+
         # Sección derecha (70%)
         self.right_section = QWidget()
         self.right_section.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
         right_layout = QVBoxLayout()
-        
-        # Aplicar sombra
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(10)
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 3)
         self.right_section.setGraphicsEffect(shadow)
-        
+
         self.right_section.setLayout(right_layout)
-        
+
         content_layout.addWidget(left_widget, 30)
         content_layout.addWidget(self.right_section, 70)
-        
+
         main_layout.addStretch()
+
+    def update_values(self, altura):
+        """Calcula y actualiza la UI con los valores recibidos"""
+        volumen = math.pi * (self.diametro / 2) ** 2 * altura
+        porcentaje = (altura / self.altura_maxima) * 100
+
+        self.labels["Volumen"].setText(f"{volumen:.2f} L")
+        self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
+        self.labels["Altura"].setText(f"{altura:.2f} m")
+
+        QApplication.processEvents()  # Asegurar actualización en la UI
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
