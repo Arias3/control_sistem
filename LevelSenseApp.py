@@ -396,6 +396,6 @@ def render_ui():
     
     st.markdown("</div>", unsafe_allow_html=True)
     if not st.session_state.get("dialog_open", False):
-        st_autorefresh(interval=1000, limit=0, key="datarefresh")
+        st_autorefresh(interval=500, limit=0, key="datarefresh")
 
 render_ui()

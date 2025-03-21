@@ -1,7 +1,7 @@
 import sys
 import asyncio
 import websockets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout
 from PyQt5.QtGui import QPixmap, QFont, QColor
 from PyQt5.QtCore import Qt, QTimer
 import math
@@ -39,27 +39,105 @@ class WebSocketServer:
 
 
 # ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
+class CustomDialog(QDialog):
+    def __init__(self, altura_maxima, diametro):
+        super().__init__()
+        self.setWindowTitle("Modificar Contenedor")
+        self.setFixedSize(350, 250)
+        self.setStyleSheet("background-color: #435585; border-radius: 10px;")
+        
+        self.altura_maxima = altura_maxima
+        self.diametro = diametro
+        
+        layout = QVBoxLayout()
+        form_layout = QFormLayout()
+        
+        label_style = "font-weight: bold; font-size: 14px; color: white;"
+        input_style = "background-color: white; border-radius: 8px; padding: 6px; font-size: 14px;"
+        button_style = "background-color: #2D336B; color: white; border-radius: 8px; padding: 10px; font-size: 16px;"
+        
+        self.altura_label = QLabel("Altura Máxima:")
+        self.altura_label.setStyleSheet(label_style)
+        self.altura_input = QLineEdit(str(self.altura_maxima))
+        self.altura_input.setStyleSheet(input_style)
+        
+        self.diametro_label = QLabel("Diámetro:")
+        self.diametro_label.setStyleSheet(label_style)
+        self.diametro_input = QLineEdit(str(self.diametro))
+        self.diametro_input.setStyleSheet(input_style)
+        
+        form_layout.addRow(self.altura_label, self.altura_input)
+        form_layout.addRow(self.diametro_label, self.diametro_input)
+        
+        self.submit_button = QPushButton("Guardar")
+        self.submit_button.setStyleSheet(button_style)
+        self.submit_button.clicked.connect(self.guardar_valores)
+        
+        layout.addLayout(form_layout)
+        layout.addWidget(self.submit_button)
+        self.setLayout(layout)
+    
+    def guardar_valores(self):
+        try:
+            self.diametro = float(self.diametro_input.text())  
+            self.altura_maxima = float(self.altura_input.text())
+            self.volumen_maximo = math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima
+            print(f"Valores guardados: Altura={self.altura_maxima}, Diámetro={self.diametro}")
+            self.accept()  # Cierra el diálogo correctamente
+        except ValueError:
+            print("Error: Ingrese valores numéricos válidos")
+
 class ModernWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.diametro = 0  # Definir atributo antes de usarlo
+        self.altura_maxima = 0
 
+        def abrir_dialogo(self):
+            dialogo = CustomDialog(self.altura_maxima or 0, self.diametro or 0)
+            if dialogo.exec_():  # Espera a que se cierre el diálogo
+                self.diametro = dialogo.diametro
+                self.altura_maxima = dialogo.altura_maxima
+                print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}")
+        abrir_dialogo()
+        
         # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
         self.setMinimumSize(800, 600)
         self.resize(1200, 700)
-
-        # Inicializar variables
-        self.altura_maxima = 30  # cm
-        self.diametro = 10  # cm
-        self.altura_actual = 0  # cm
-        self.volumen_maximo = math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima
 
         # Crear interfaz gráfica
         self.setup_ui()
 
         # Iniciar WebSocket en segundo plano
         self.websocket_server = WebSocketServer(self.update_values)
+    
+    def show_dialog(self):
+        dialog = CustomDialog(self.altura_maxima, self.diametro)
+        if dialog.exec_() == QDialog.Accepted:
+            print(f"Nuevos valores recibidos: Altura={dialog.altura_maxima}, Diámetro={dialog.diametro}")
+            self.altura_maxima = dialog.altura_maxima
+            self.diametro = dialog.diametro
+            self.actualizar_calculos()  # Asegura que la UI refleje los nuevos valores
 
+    def update_values(self, altura):
+        """Se llama cuando llega un nuevo valor desde WebSocket"""
+        self.altura_actual = altura
+        self.actualizar_calculos()  # Recalcula volumen y porcentaje
+
+    def actualizar_calculos(self):
+        self.volumen_maximo = math.pi * (self.diametro / 2) ** 2 * self.altura_maxima
+        volumen_actual = math.pi * (self.diametro / 2) ** 2 * self.altura_actual
+        porcentaje = (volumen_actual / self.volumen_maximo) * 100 if self.volumen_maximo > 0 else 0
+
+        print(f"Actualizando UI: Volumen={volumen_actual}, Porcentaje={porcentaje}, Altura={self.altura_actual}")
+
+        if hasattr(self, "labels") and all(k in self.labels for k in ["Volumen", "Porcentaje", "Altura"]):
+            self.labels["Volumen"].setText(f"{volumen_actual:.1f} L")
+            self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
+            self.labels["Altura"].setText(f"{self.altura_actual:.1f} cm")
+            self.repaint()  # Forzar actualización de la UI
+        
     def setup_ui(self):
         """Configura la interfaz gráfica"""
         central_widget = QWidget()
@@ -97,13 +175,27 @@ class ModernWindow(QMainWindow):
         self.title.setFont(QFont("Roboto", 26, QFont.Bold))
         self.title.setStyleSheet("color: #D8DEE9;")
 
+        # Botón para abrir el diálogo
+        self.open_dialog_button = QPushButton("Editar")
+        self.open_dialog_button.setFont(QFont("roboto", 16))
+        self.open_dialog_button.setFixedSize(100, 60)
+        self.open_dialog_button.setStyleSheet("""
+            background-color: #2D336B;
+            color: white;
+            border: 3px solid #1E2749;
+            border-radius: 10px;
+        """)
+        self.open_dialog_button.clicked.connect(self.show_dialog)
+        # Agregar elementos al header
         header_layout.addWidget(self.logo)
         header_layout.addSpacing(10)
         header_layout.addWidget(self.title)
         header_layout.addStretch()
+        header_layout.addWidget(self.open_dialog_button)
 
+        # Agregar header al layout principal
         main_layout.addWidget(self.header)
-        main_layout.addSpacing(20)
+        main_layout.addSpacing(20)  # Espacio entre header y contenido
 
         # Layout de contenido
         content_layout = QHBoxLayout()
@@ -130,7 +222,7 @@ class ModernWindow(QMainWindow):
                 self.values = {
                     "Volumen": "0 L",
                     "Porcentaje": "0%",
-                    "Altura": "0 m"
+                    "Altura": "0 cm"
                 }
 
                 self.labels = {}
@@ -241,9 +333,13 @@ class ModernWindow(QMainWindow):
 
         self.labels["Volumen"].setText(f"{volumen:.2f} L")
         self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
-        self.labels["Altura"].setText(f"{altura:.2f} m")
+        self.labels["Altura"].setText(f"{altura:.1f} cm")
 
         QApplication.processEvents()  # Asegurar actualización en la UI
+    
+    def show_dialog(self):
+        dialog = CustomDialog(self.altura_maxima, self.diametro)
+        dialog.exec_()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
