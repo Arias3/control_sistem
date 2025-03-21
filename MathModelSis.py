@@ -11,9 +11,9 @@ num = [K / A]
 den = [1, 0]  # Sistema de primer orden: dh/dt = (K/A) * PWM
 G = ctrl.TransferFunction(num, den)
 
-Kp = 100
-Ki = 1
-Kd = 5
+Kp = 50
+Ki = 0.5
+Kd = 2
 
 # Controlador PID
 C = ctrl.TransferFunction([Kd, Kp, Ki], [1, 0])

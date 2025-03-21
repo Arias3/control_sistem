@@ -1,10 +1,11 @@
 import sys
 import asyncio
 import websockets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout
 from PyQt5.QtGui import QPixmap, QFont, QColor
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QDoubleValidator
 import math
+from PyQt5.QtCore import Qt, QTimer
 import threading
 import json
 
@@ -39,11 +40,12 @@ class WebSocketServer:
 
 
 # ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
+
 class CustomDialog(QDialog):
     def __init__(self, altura_maxima, diametro):
         super().__init__()
         self.setWindowTitle("Modificar Contenedor")
-        self.setFixedSize(350, 250)
+        self.setFixedSize(400, 280)
         self.setStyleSheet("background-color: #435585; border-radius: 10px;")
         
         self.altura_maxima = altura_maxima
@@ -55,20 +57,32 @@ class CustomDialog(QDialog):
         label_style = "font-weight: bold; font-size: 14px; color: white;"
         input_style = "background-color: white; border-radius: 8px; padding: 6px; font-size: 14px;"
         button_style = "background-color: #2D336B; color: white; border-radius: 8px; padding: 10px; font-size: 16px;"
+        error_style = "color: red; font-size: 12px;"
+        success_style = "color: green; font-size: 12px;"
         
-        self.altura_label = QLabel("Altura Máxima:")
+        # Altura
+        self.altura_label = QLabel("Altura Máxima (cm):")
         self.altura_label.setStyleSheet(label_style)
         self.altura_input = QLineEdit(str(self.altura_maxima))
         self.altura_input.setStyleSheet(input_style)
+        self.altura_error = QLabel("")
+        self.altura_error.setStyleSheet(error_style)
         
-        self.diametro_label = QLabel("Diámetro:")
+        # Diámetro
+        self.diametro_label = QLabel("Diámetro (cm):")
         self.diametro_label.setStyleSheet(label_style)
         self.diametro_input = QLineEdit(str(self.diametro))
         self.diametro_input.setStyleSheet(input_style)
+        self.diametro_error = QLabel("")
+        self.diametro_error.setStyleSheet(error_style)
         
+        # Agregar widgets
         form_layout.addRow(self.altura_label, self.altura_input)
+        form_layout.addRow("", self.altura_error)
         form_layout.addRow(self.diametro_label, self.diametro_input)
+        form_layout.addRow("", self.diametro_error)
         
+        # Botón
         self.submit_button = QPushButton("Guardar")
         self.submit_button.setStyleSheet(button_style)
         self.submit_button.clicked.connect(self.guardar_valores)
@@ -78,14 +92,34 @@ class CustomDialog(QDialog):
         self.setLayout(layout)
     
     def guardar_valores(self):
+        altura_text = self.altura_input.text()
+        diametro_text = self.diametro_input.text()
+        
         try:
-            self.diametro = float(self.diametro_input.text())  
-            self.altura_maxima = float(self.altura_input.text())
-            self.volumen_maximo = math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima
-            print(f"Valores guardados: Altura={self.altura_maxima}, Diámetro={self.diametro}")
-            self.accept()  # Cierra el diálogo correctamente
+            altura = float(altura_text)
+            diametro = float(diametro_text)
+            
+            if not (0 < altura <= 500):
+                self.altura_error.setText("Error: Altura fuera de rango (0-500 cm)")
+            else:
+                self.altura_error.setText("")
+            
+            if not (0 < diametro <= 200):
+                self.diametro_error.setText("Error: Diámetro fuera de rango (0-200 cm)")
+            else:
+                self.diametro_error.setText("")
+            
+            if 0 < altura <= 500 and 0 < diametro <= 200:
+                self.altura_maxima = altura
+                self.diametro = diametro
+                self.volumen_maximo = math.pi * ((diametro / 2) ** 2) * altura
+                self.altura_error.setStyleSheet("color: green;")
+                self.altura_error.setText("Valores guardados correctamente.")
+                self.accept()
         except ValueError:
-            print("Error: Ingrese valores numéricos válidos")
+            self.altura_error.setText("Error: Ingrese solo números válidos.")
+            self.diametro_error.setText("Error: Ingrese solo números válidos.")
+
 
 class ModernWindow(QMainWindow):
     def __init__(self):
@@ -99,7 +133,7 @@ class ModernWindow(QMainWindow):
                 self.diametro = dialogo.diametro
                 self.altura_maxima = dialogo.altura_maxima
                 print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}")
-        abrir_dialogo()
+        abrir_dialogo(self)
         
         # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
