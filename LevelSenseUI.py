@@ -343,7 +343,7 @@ class ModernWindow(QMainWindow):
                 empty_layout.addWidget(self.empty_progress)
                 
                 progress_container.addLayout(fill_layout)
-                progress_container.addSpacing(20)
+                progress_container.addSpacing(30)
                 progress_container.addLayout(empty_layout)
                 
                 block_layout.addLayout(progress_container)
@@ -427,23 +427,90 @@ class ModernWindow(QMainWindow):
             self.left_section.addWidget(block)
             # Agregar espaciado vertical entre los bloques
             if i < 2:  # No agregar espaciado después del último bloque
-                self.left_section.addSpacing(20)  # Ajusta el valor para más o menos espaciado
+                self.left_section.addSpacing(30)  # Ajusta el valor para más o menos espaciado
 
         left_widget = QWidget()
         left_widget.setLayout(self.left_section)
 
         # Sección derecha (70%)
         self.right_section = QWidget()
-        self.right_section.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
-        right_layout = QVBoxLayout()
+
+        # Crear un layout principal para la sección derecha
+        right_main_layout = QVBoxLayout()
+
+        # Primera sección: Título y menú desplegable
+
+        # Crear un layout horizontal para el título y el menú
+        title_menu_layout = QHBoxLayout()
+
+        # Crear un label como título para la sección derecha
+        self.dynamic_title_label = QLabel("Altura")
+        self.dynamic_title_label.setFont(QFont("Roboto", 16, QFont.Bold))
+        self.dynamic_title_label.setStyleSheet("color: white;")
+        self.dynamic_title_label.setAlignment(Qt.AlignLeft)
+
+        # Crear un menú de selección (QComboBox)
+        unit_menu = QComboBox()
+        unit_menu.addItems(["cm", "L", "%"])
+        unit_menu.setStyleSheet("""
+            QComboBox {
+            background-color: white;
+            border: 2px solid #000;
+            border-radius: 10px;
+            padding: 5px;
+            font-size: 14px;
+            }
+            QComboBox::drop-down {
+            border: none;
+            background-color: transparent;
+            }
+            QComboBox QAbstractItemView {
+            background-color: white;
+            border: 1px solid black;
+            selection-background-color: #D3D3D3;
+            selection-color: black;
+            }
+        """)
+
+        # Conectar el cambio de selección del menú al cambio de texto del título
+        def actualizar_titulo(index):
+            opciones = ["Altura", "Volumen", "Porcentaje"]
+            self.dynamic_title_label.setText(opciones[index])
+
+        unit_menu.currentIndexChanged.connect(actualizar_titulo)
+
+        # Agregar el título y el menú al layout horizontal
+        title_menu_layout.addWidget(self.dynamic_title_label, alignment=Qt.AlignLeft)
+        title_menu_layout.addStretch()  # Agregar espacio flexible entre el título y el menú
+        title_menu_layout.addWidget(unit_menu, alignment=Qt.AlignRight)
+
+        # Agregar el layout horizontal al layout principal de la sección derecha
+        right_main_layout.addLayout(title_menu_layout)
+
+        # Segunda sección: Contenedor para imagen o contenido futuro
+        content_container = QWidget()
+        content_container.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
+        content_container.setMinimumHeight(400)  # Ajustar altura según sea necesario
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(10)
         shadow.setColor(QColor(0, 0, 0, 150))
         shadow.setOffset(0, 3)
-        self.right_section.setGraphicsEffect(shadow)
+        content_container.setGraphicsEffect(shadow)
 
-        self.right_section.setLayout(right_layout)
+        # Agregar el contenedor al layout principal de la derecha
+        right_main_layout.addWidget(content_container)
+
+        # Establecer el layout principal en la sección derecha
+        self.right_section.setLayout(right_main_layout)
+
+        # Agregar las secciones izquierda y derecha al layout de contenido
+        content_layout.addWidget(left_widget, 30)
+        content_layout.addWidget(self.right_section, 70)
+
+        # Establecer el layout principal en la sección derecha
+        self.right_section.setLayout(right_main_layout)
+
 
         content_layout.addWidget(left_widget, 30)
         content_layout.addWidget(self.right_section, 70)
