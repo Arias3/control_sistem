@@ -1,7 +1,7 @@
 import sys
 import asyncio
 import websockets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout, QComboBox
 from PyQt5.QtGui import QPixmap, QFont, QColor
 from PyQt5.QtGui import QDoubleValidator
 import math
@@ -95,6 +95,7 @@ class CustomDialog(QDialog):
         altura_text = self.altura_input.text()
         diametro_text = self.diametro_input.text()
         
+        
         try:
             altura = float(altura_text)
             diametro = float(diametro_text)
@@ -110,9 +111,17 @@ class CustomDialog(QDialog):
                 self.diametro_error.setText("")
             
             if 0 < altura <= 500 and 0 < diametro <= 200:
+                # Calcular el volumen máximo
+                self.volumen_maximo = math.pi * ((diametro / 2) ** 2) * altura / 1000  # Convertir de cm³ a L
                 self.altura_maxima = altura
                 self.diametro = diametro
-                self.volumen_maximo = math.pi * ((diametro / 2) ** 2) * altura
+
+                 # Imprimir los valores calculados en la consola
+                print(f"Altura máxima: {self.altura_maxima} cm")
+                print(f"Diámetro: {self.diametro} cm")
+                print(f"Volumen máximo: {self.volumen_maximo:.2f} L")
+                
+                # Mostrar mensaje de éxito
                 self.altura_error.setStyleSheet("color: green;")
                 self.altura_error.setText("Valores guardados correctamente.")
                 self.accept()
@@ -126,13 +135,15 @@ class ModernWindow(QMainWindow):
         super().__init__()
         self.diametro = 0  # Definir atributo antes de usarlo
         self.altura_maxima = 0
+        self.volumen_maximo = 0
 
         def abrir_dialogo(self):
             dialogo = CustomDialog(self.altura_maxima or 0, self.diametro or 0)
             if dialogo.exec_():  # Espera a que se cierre el diálogo
                 self.diametro = dialogo.diametro
                 self.altura_maxima = dialogo.altura_maxima
-                print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}")
+                self.volumen_maximo = dialogo.volumen_maximo
+                print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}, Volumen={self.volumen_maximo}")
         abrir_dialogo(self)
         
         # Configuración de la ventana principal
@@ -149,10 +160,11 @@ class ModernWindow(QMainWindow):
     def show_dialog(self):
         dialog = CustomDialog(self.altura_maxima, self.diametro)
         if dialog.exec_() == QDialog.Accepted:
-            print(f"Nuevos valores recibidos: Altura={dialog.altura_maxima}, Diámetro={dialog.diametro}")
+            # Actualizar los valores máximos desde el diálogo
             self.altura_maxima = dialog.altura_maxima
             self.diametro = dialog.diametro
-            self.actualizar_calculos()  # Asegura que la UI refleje los nuevos valores
+            self.volumen_maximo = (math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima) / 1000  # Convertir de cm³ a L
+            print(f"Nuevos valores recibidos: Altura={self.altura_maxima} cm, Diámetro={self.diametro} cm, Volumen Máximo={self.volumen_maximo:.2f} L")
 
     def update_values(self, altura):
         """Se llama cuando llega un nuevo valor desde WebSocket"""
@@ -160,8 +172,8 @@ class ModernWindow(QMainWindow):
         self.actualizar_calculos()  # Recalcula volumen y porcentaje
 
     def actualizar_calculos(self):
-        self.volumen_maximo = math.pi * (self.diametro / 2) ** 2 * self.altura_maxima
-        volumen_actual = math.pi * (self.diametro / 2) ** 2 * self.altura_actual
+        self.volumen_maximo = (math.pi * (self.diametro / 2) ** 2 * self.altura_maxima) / 1000  # Convertir de cm³ a L
+        volumen_actual = (math.pi * (self.diametro / 2) ** 2 * self.altura_actual) / 1000  # Convertir de cm³ a L
         porcentaje = (volumen_actual / self.volumen_maximo) * 100 if self.volumen_maximo > 0 else 0
 
         print(f"Actualizando UI: Volumen={volumen_actual}, Porcentaje={porcentaje}, Altura={self.altura_actual}")
@@ -331,13 +343,91 @@ class ModernWindow(QMainWindow):
                 empty_layout.addWidget(self.empty_progress)
                 
                 progress_container.addLayout(fill_layout)
-                progress_container.addSpacing(10)
+                progress_container.addSpacing(20)
                 progress_container.addLayout(empty_layout)
                 
                 block_layout.addLayout(progress_container)
-            
+            elif i == 2:  # Bloque vacío
+                # Crear un QLabel para el bloque vacío
+                empty_label = QLabel("Ingrese un nuevo nivel de llenado")
+                empty_label.setFont(QFont("Roboto", 12))
+                empty_label.setStyleSheet("color: Black;")
+                empty_label.setAlignment(Qt.AlignCenter)
+                block_layout.addWidget(empty_label)
+
+                # Crear un layout horizontal para el input y el selector
+                input_selector_layout = QHBoxLayout()
+                input_selector_layout.setContentsMargins(20, 0, 20, 0)  # Espaciado interno
+
+                # Crear el input numérico
+                self.numeric_input = QLineEdit()
+                self.numeric_input.setPlaceholderText("Nivel de llenado")
+                self.numeric_input.setValidator(QDoubleValidator())  # Solo permite números
+                self.numeric_input.setStyleSheet("""
+                    QLineEdit {
+                        background-color: white;
+                        border: 2px solid #000;
+                        border-radius: 10px;
+                        padding: 5px;
+                        font-size: 14px;
+                    }
+                """)
+                input_selector_layout.addWidget(self.numeric_input)
+
+                # Crear el selector con 3 opciones
+                self.selector = QComboBox()
+                self.selector.addItem("     ▼")
+                self.selector.addItems(["     L", "     cm", "     %"])
+                self.selector.setItemData(0, 0, Qt.UserRole - 1)  # Deshabilitar la primera opción
+                self.selector.setStyleSheet("""
+                QComboBox {
+                    background-color: white;
+                    border: 2px solid #000;
+                    border-radius: 10px;
+                    padding: 5px;
+                    font-size: 14px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                    background-color: transparent;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: white;
+                    border: 1px solid black;
+                    selection-background-color: #D3D3D3;
+                    selection-color: black;
+                }
+            """)
+                input_selector_layout.addWidget(self.selector)
+
+                # Agregar el layout horizontal al bloque
+                block_layout.addLayout(input_selector_layout)
+
+                # Crear el botón de enviar
+                send_button = QPushButton("Enviar")
+                send_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #435585;
+                        color: black;
+                        border-radius: 10px;
+                        padding: 10px;
+                        font-size: 16px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover {
+                        background-color: #5a6a9c;
+                    }
+                """)
+                block_layout.addWidget(send_button, alignment=Qt.AlignCenter)
+
+                # Conectar el botón a la función enviar_datos
+                send_button.clicked.connect(self.enviar_datos)
+
             block.setLayout(block_layout)
             self.left_section.addWidget(block)
+            # Agregar espaciado vertical entre los bloques
+            if i < 2:  # No agregar espaciado después del último bloque
+                self.left_section.addSpacing(20)  # Ajusta el valor para más o menos espaciado
 
         left_widget = QWidget()
         left_widget.setLayout(self.left_section)
@@ -371,9 +461,69 @@ class ModernWindow(QMainWindow):
 
         QApplication.processEvents()  # Asegurar actualización en la UI
     
-    def show_dialog(self):
-        dialog = CustomDialog(self.altura_maxima, self.diametro)
-        dialog.exec_()
+    # Función para manejar el evento del botón
+    def enviar_datos(self):
+        # Obtener el valor del input numérico
+        nivel_text = self.numeric_input.text()
+        # Obtener la opción seleccionada del selector
+        unidad = self.selector.currentText().strip()
+
+        # Validar que se haya ingresado un nivel
+        if not nivel_text:
+            QMessageBox.warning(self, "Error", "Por favor, ingrese un nivel de llenado.")
+            return
+
+        try:
+            # Convertir el nivel a un número flotante
+            nivel = float(nivel_text)
+
+            # Validar que el nivel no sea negativo
+            if nivel < 0:
+                QMessageBox.warning(self, "Error", "El nivel de llenado no puede ser negativo.")
+                return
+
+            # Validar según la unidad seleccionada
+            if unidad == "L":  # Volumen
+                if nivel > self.volumen_maximo:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        f"El volumen no puede exceder el máximo permitido ({self.volumen_maximo:.1f} L)."
+                    )
+                    return
+                altura_calculada = (nivel * 1000) / (math.pi * ((self.diametro / 2) ** 2))
+
+            elif unidad == "cm":  # Altura
+                if nivel > self.altura_maxima:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        f"La altura no puede exceder la altura máxima del contenedor ({self.altura_maxima:.1f} cm)."
+                    )
+                    return
+                altura_calculada = nivel
+            elif unidad == "%":  # Porcentaje
+                if nivel > 100:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        "El porcentaje no puede exceder el 100%."
+                    )
+                    return
+                altura_calculada = (nivel / 100) * self.altura_maxima
+            else:
+                QMessageBox.warning(self, "Error", "Por favor, seleccione una unidad válida.")
+                return
+            # Imprimir la altura calculada en la consola
+            print(f"Altura calculada: {altura_calculada:.2f} cm")
+
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Por favor, ingrese un número válido.")
+            return
+
+        # Procesar los datos (puedes personalizar esta parte)
+        QMessageBox.information(self, "Datos enviados", f"Nuevo Nivel: {altura_calculada:.2f} cm", QMessageBox.Ok, QMessageBox.Ok)
+        print(f"Altura calculada enviada: {altura_calculada:.2f} cm")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
