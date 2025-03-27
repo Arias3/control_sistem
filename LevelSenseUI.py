@@ -1,13 +1,18 @@
 import sys
 import asyncio
 import websockets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout, QComboBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget,QSizePolicy, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout, QComboBox
 from PyQt5.QtGui import QPixmap, QFont, QColor
 from PyQt5.QtGui import QDoubleValidator
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import numpy as np
 import math
 from PyQt5.QtCore import Qt, QTimer
 import threading
 import json
+
+import random
 
 # ========================== BACKEND - WEBSOCKET ==========================
 class WebSocketServer:
@@ -145,6 +150,8 @@ class ModernWindow(QMainWindow):
                 self.volumen_maximo = dialogo.volumen_maximo
                 print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}, Volumen={self.volumen_maximo}")
         abrir_dialogo(self)
+
+        
         
         # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
@@ -155,7 +162,7 @@ class ModernWindow(QMainWindow):
         self.setup_ui()
 
         # Iniciar WebSocket en segundo plano
-        self.websocket_server = WebSocketServer(self.update_values)
+        self.websocket_server = WebSocketServer(self.actualizar_altura_websocket)
     
     def show_dialog(self):
         dialog = CustomDialog(self.altura_maxima, self.diametro)
@@ -166,10 +173,10 @@ class ModernWindow(QMainWindow):
             self.volumen_maximo = (math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima) / 1000  # Convertir de cm³ a L
             print(f"Nuevos valores recibidos: Altura={self.altura_maxima} cm, Diámetro={self.diametro} cm, Volumen Máximo={self.volumen_maximo:.2f} L")
 
-    def update_values(self, altura):
+    def actualizar_altura_websocket(self, altura):
         """Se llama cuando llega un nuevo valor desde WebSocket"""
         self.altura_actual = altura
-        self.actualizar_calculos()  # Recalcula volumen y porcentaje
+        self.actualizar_calculos()  # Recalcula volumen y porcentaje  
 
     def actualizar_calculos(self):
         self.volumen_maximo = (math.pi * (self.diametro / 2) ** 2 * self.altura_maxima) / 1000  # Convertir de cm³ a L
@@ -433,17 +440,23 @@ class ModernWindow(QMainWindow):
         left_widget.setLayout(self.left_section)
 
         # Sección derecha (70%)
-        self.right_section = QWidget()
+        self.right_section = QVBoxLayout()
 
-        # Crear un layout principal para la sección derecha
-        right_main_layout = QVBoxLayout()
+        # Crear un contenedor para la gráfica similar a los bloques de la izquierda
+        graph_block = QWidget()
+        graph_block.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
+        graph_block_layout = QVBoxLayout()
 
-        # Primera sección: Título y menú desplegable
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 3)
+        graph_block.setGraphicsEffect(shadow)
 
         # Crear un layout horizontal para el título y el menú
         title_menu_layout = QHBoxLayout()
 
-        # Crear un label como título para la sección derecha
+        # Crear un label como título para la gráfica
         self.dynamic_title_label = QLabel("Altura")
         self.dynamic_title_label.setFont(QFont("Roboto", 16, QFont.Bold))
         self.dynamic_title_label.setStyleSheet("color: white;")
@@ -484,49 +497,97 @@ class ModernWindow(QMainWindow):
         title_menu_layout.addStretch()  # Agregar espacio flexible entre el título y el menú
         title_menu_layout.addWidget(unit_menu, alignment=Qt.AlignRight)
 
-        # Agregar el layout horizontal al layout principal de la sección derecha
-        right_main_layout.addLayout(title_menu_layout)
+        # Agregar el layout horizontal al bloque de la gráfica
+        graph_block_layout.addLayout(title_menu_layout)
 
-        # Segunda sección: Contenedor para imagen o contenido futuro
-        content_container = QWidget()
-        content_container.setStyleSheet("background-color: #7886C7; border-radius: 10px;")
-        content_container.setMinimumHeight(400)  # Ajustar altura según sea necesario
+        # Crear la gráfica
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_xlim(-100, 0)  # Tiempo en el eje X
+        self.ax.set_ylim(0, 1)  # Se ajustará dinámicamente
+        self.ax.set_xlabel("Tiempo (s)")
+        self.ax.set_ylabel("Altura (cm)")
+        self.line, = self.ax.plot([], [], color="blue", alpha=0.6)
+        self.fill = self.ax.fill_between([], [], color="cyan", alpha=0.3)
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(10)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 3)
-        content_container.setGraphicsEffect(shadow)
+        # Inicializar datos para la gráfica
+        self.data = {
+            "time": np.linspace(-100, 0, 100),
+            "values": np.zeros(100)
+        }
 
-        # Agregar el contenedor al layout principal de la derecha
-        right_main_layout.addWidget(content_container)
+        # Agregar la gráfica al bloque
+        graph_layout = QVBoxLayout()
+        graph_layout.setContentsMargins(0, 0, 0, 0)  # Eliminar márgenes
+        graph_layout.addWidget(self.canvas)
+        graph_block_layout.addLayout(graph_layout)
 
-        # Establecer el layout principal en la sección derecha
-        self.right_section.setLayout(right_main_layout)
+        # Establecer el layout del bloque de la gráfica
+        graph_block.setLayout(graph_block_layout)
+
+        # Agregar el bloque de la gráfica a la sección derecha
+        self.right_section.addWidget(graph_block)
+
+        # Conectar el cambio de selección del menú al cambio de gráfica
+        unit_menu.currentIndexChanged.connect(self.actualizar_grafica)
+
+        # Iniciar un temporizador para actualizar la gráfica cada segundo
+        self.timer = QTimer()
+        self.timer.timeout.connect(lambda: self.actualizar_grafica(unit_menu.currentText().strip()))
+        self.timer.start(1000)  # Actualizar cada segundo
 
         # Agregar las secciones izquierda y derecha al layout de contenido
         content_layout.addWidget(left_widget, 30)
-        content_layout.addWidget(self.right_section, 70)
-
-        # Establecer el layout principal en la sección derecha
-        self.right_section.setLayout(right_main_layout)
-
-
-        content_layout.addWidget(left_widget, 30)
-        content_layout.addWidget(self.right_section, 70)
-
+        content_layout.addLayout(self.right_section, 70)
         main_layout.addStretch()
 
-    def update_values(self, altura):
-        """Calcula y actualiza la UI con los valores recibidos"""
-        volumen = math.pi * (self.diametro / 2) ** 2 * altura
-        porcentaje = (altura / self.altura_maxima) * 100
-
-        self.labels["Volumen"].setText(f"{volumen:.2f} L")
-        self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
-        self.labels["Altura"].setText(f"{altura:.1f} cm")
-
-        QApplication.processEvents()  # Asegurar actualización en la UI
+    def actualizar_grafica(self, unidad):
+            """Actualiza la gráfica y los valores según la unidad seleccionada"""
+            # Ajustar el eje Y según la unidad seleccionada
+            if unidad == "cm":  # Altura
+                self.ax.set_ylim(0, self.altura_maxima)
+                self.ax.set_ylabel("Altura (cm)")
+            elif unidad == "L":  # Volumen
+                self.ax.set_ylim(0, self.volumen_maximo)
+                self.ax.set_ylabel("Volumen (L)")
+            elif unidad == "%":  # Porcentaje
+                self.ax.set_ylim(0, 100)
+                self.ax.set_ylabel("Porcentaje (%)")
+    
+            # Generar un nuevo valor para la variable mensaje
+            mensaje = self.generar_valor_mensaje()
+    
+            # Convertir el valor de mensaje según la unidad seleccionada
+            if unidad == "L":  # Convertir volumen a altura
+                nuevo_valor = (mensaje * 1000) / (math.pi * ((self.diametro / 2) ** 2))
+            elif unidad == "%":  # Convertir porcentaje a altura
+                nuevo_valor = (mensaje / 100) * self.altura_maxima
+            else:  # Altura directamente
+                nuevo_valor = mensaje
+    
+            # Actualizar los valores de la gráfica
+            self.data["values"] = np.roll(self.data["values"], -1)  # Desplazar los datos
+            self.data["values"][-1] = nuevo_valor  # Agregar el nuevo valor al final
+    
+            # Actualizar los datos de la gráfica
+            self.line.set_data(self.data["time"], self.data["values"])
+            if self.fill:
+                self.fill.remove()  # Eliminar el área anterior si existe
+            self.fill = self.ax.fill_between(self.data["time"], self.data["values"], color="cyan", alpha=0.3)
+    
+            # Redibujar la gráfica
+            self.canvas.draw()
+    
+    def generar_valor_mensaje(self):
+            """Genera un valor aleatorio para la variable mensaje"""
+            if self.selector.currentText().strip() == "cm":  # Altura
+                return random.uniform(0, self.altura_maxima)
+            elif self.selector.currentText().strip() == "L":  # Volumen
+                return random.uniform(0, self.volumen_maximo)
+            elif self.selector.currentText().strip() == "%":  # Porcentaje
+                return random.uniform(0, 100)
+            return 0.0   
     
     # Función para manejar el evento del botón
     def enviar_datos(self):
