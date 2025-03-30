@@ -1,47 +1,41 @@
 import sys
-import asyncio
-import websockets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget,QSizePolicy, QVBoxLayout,QMessageBox, QHBoxLayout, QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout, QComboBox
-from PyQt5.QtGui import QPixmap, QFont, QColor
-from PyQt5.QtGui import QDoubleValidator
+import math
+import random
+import json
+import numpy as np
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QMessageBox, QHBoxLayout,
+    QGraphicsDropShadowEffect, QProgressBar, QPushButton, QDialog, QLineEdit, QFormLayout, QComboBox
+)
+from PyQt5.QtGui import QPixmap, QFont, QColor, QDoubleValidator
+from PyQt5.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import numpy as np
-import math
-from PyQt5.QtCore import Qt, QTimer
+from websocket_server import WebsocketServer
 import threading
-import json
-
-import random
 
 # ========================== BACKEND - WEBSOCKET ==========================
-class WebSocketServer:
-    def __init__(self, ui_callback):
-        """Inicializa el servidor WebSocket en un hilo separado"""
-        self.ui_callback = ui_callback  # Función para actualizar la UI
-        self.thread = threading.Thread(target=self.run_server, daemon=True)
-        self.thread.start()
 
-    def run_server(self):
-        """Ejecuta el servidor WebSocket en segundo plano"""
-        asyncio.run(self.websocket_server())
 
-    async def websocket_server(self):
-        """Lógica de comunicación WebSocket"""
-        async def websocket_handler(websocket):
-            async for message in websocket:
-                try:
-                    parsed = json.loads(message)
-                    altura = float(parsed[0]) if len(parsed) > 0 else 0.0
-                except (json.JSONDecodeError, ValueError, IndexError):
-                    altura = 0.0
+# Función que se ejecuta cuando un cliente se conecta
+def new_client(client, server):
+    print(f"Cliente conectado: {client['id']}")
 
-                # Llama a la función de actualización de UI
-                self.ui_callback(altura)
+# Función que se ejecuta cuando se recibe un mensaje
+def message_received(client, server, message):
+    print(f"R: {message}")
 
-        server = await websockets.serve(websocket_handler, "0.0.0.0", 8765)
-        print("Servidor WebSocket corriendo en 0.0.0.0:8765")
-        await server.wait_closed()
+# Crear el servidor WebSocket
+def start_websocket_server():
+    server = WebsocketServer(host="0.0.0.0", port=8765)
+    server.set_fn_new_client(new_client)
+    server.set_fn_message_received(message_received)
+    print("Servidor WebSocket corriendo en 0.0.0.0:8765")
+    server.run_forever()
+
+# Iniciar el servidor WebSocket en un hilo separado
+websocket_thread = threading.Thread(target=start_websocket_server, daemon=True)
+websocket_thread.start()
 
 
 # ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
@@ -138,21 +132,10 @@ class CustomDialog(QDialog):
 class ModernWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.diametro = 0  # Definir atributo antes de usarlo
+        self.diametro = 0
         self.altura_maxima = 0
         self.volumen_maximo = 0
 
-        def abrir_dialogo(self):
-            dialogo = CustomDialog(self.altura_maxima or 0, self.diametro or 0)
-            if dialogo.exec_():  # Espera a que se cierre el diálogo
-                self.diametro = dialogo.diametro
-                self.altura_maxima = dialogo.altura_maxima
-                self.volumen_maximo = dialogo.volumen_maximo
-                print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}, Volumen={self.volumen_maximo}")
-        abrir_dialogo(self)
-
-        
-        
         # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
         self.setMinimumSize(800, 600)
@@ -161,10 +144,20 @@ class ModernWindow(QMainWindow):
         # Crear interfaz gráfica
         self.setup_ui()
 
-        # Iniciar WebSocket en segundo plano
-        self.websocket_server = WebSocketServer(self.actualizar_altura_websocket)
-    
+        # Ejecutar diálogo inicial
+        self.abrir_dialogo()
+
+    def abrir_dialogo(self):
+        """Abre el diálogo para configurar el contenedor."""
+        dialogo = CustomDialog(self.altura_maxima or 0, self.diametro or 0)
+        if dialogo.exec_():  # Espera a que se cierre el diálogo
+            self.diametro = dialogo.diametro
+            self.altura_maxima = dialogo.altura_maxima
+            self.volumen_maximo = dialogo.volumen_maximo
+            print(f"Nuevos valores en ModernWindow: Altura={self.altura_maxima}, Diámetro={self.diametro}, Volumen={self.volumen_maximo}")
+
     def show_dialog(self):
+        """Muestra el diálogo para editar los valores del contenedor."""
         dialog = CustomDialog(self.altura_maxima, self.diametro)
         if dialog.exec_() == QDialog.Accepted:
             # Actualizar los valores máximos desde el diálogo
@@ -173,25 +166,8 @@ class ModernWindow(QMainWindow):
             self.volumen_maximo = (math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima) / 1000  # Convertir de cm³ a L
             print(f"Nuevos valores recibidos: Altura={self.altura_maxima} cm, Diámetro={self.diametro} cm, Volumen Máximo={self.volumen_maximo:.2f} L")
 
-    def actualizar_altura_websocket(self, altura):
-        """Se llama cuando llega un nuevo valor desde WebSocket"""
-        self.altura_actual = altura
-        self.actualizar_calculos()  # Recalcula volumen y porcentaje  
-
-    def actualizar_calculos(self):
-        self.volumen_maximo = (math.pi * (self.diametro / 2) ** 2 * self.altura_maxima) / 1000  # Convertir de cm³ a L
-        volumen_actual = (math.pi * (self.diametro / 2) ** 2 * self.altura_actual) / 1000  # Convertir de cm³ a L
-        porcentaje = (volumen_actual / self.volumen_maximo) * 100 if self.volumen_maximo > 0 else 0
-
-        print(f"Actualizando UI: Volumen={volumen_actual}, Porcentaje={porcentaje}, Altura={self.altura_actual}")
-
-        if hasattr(self, "labels") and all(k in self.labels for k in ["Volumen", "Porcentaje", "Altura"]):
-            self.labels["Volumen"].setText(f"{volumen_actual:.1f} L")
-            self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
-            self.labels["Altura"].setText(f"{self.altura_actual:.1f} cm")
-            self.repaint()  # Forzar actualización de la UI
-        
     def setup_ui(self):
+        pass  # Mantener el método setup_ui como está en el código original
         """Configura la interfaz gráfica"""
         central_widget = QWidget()
         central_widget.setStyleSheet("background-color: #435585;")  
@@ -543,42 +519,48 @@ class ModernWindow(QMainWindow):
         main_layout.addStretch()
 
     def actualizar_grafica(self, unidad):
-            """Actualiza la gráfica y los valores según la unidad seleccionada"""
-            # Ajustar el eje Y según la unidad seleccionada
-            if unidad == "cm":  # Altura
+        """Actualiza la gráfica y los valores según la unidad seleccionada"""
+        # Ajustar el eje Y según la unidad seleccionada
+        if unidad == "cm":  # Altura
+            if self.altura_maxima > 0:
                 self.ax.set_ylim(0, self.altura_maxima)
-                self.ax.set_ylabel("Altura (cm)")
-            elif unidad == "L":  # Volumen
+            else:
+                self.ax.set_ylim(0, 1)  # Valor predeterminado
+            self.ax.set_ylabel("Altura (cm)")
+        elif unidad == "L":  # Volumen
+            if self.volumen_maximo > 0:
                 self.ax.set_ylim(0, self.volumen_maximo)
-                self.ax.set_ylabel("Volumen (L)")
-            elif unidad == "%":  # Porcentaje
-                self.ax.set_ylim(0, 100)
-                self.ax.set_ylabel("Porcentaje (%)")
-    
-            # Generar un nuevo valor para la variable mensaje
-            mensaje = self.generar_valor_mensaje()
-    
-            # Convertir el valor de mensaje según la unidad seleccionada
-            if unidad == "L":  # Convertir volumen a altura
-                nuevo_valor = (mensaje * 1000) / (math.pi * ((self.diametro / 2) ** 2))
-            elif unidad == "%":  # Convertir porcentaje a altura
-                nuevo_valor = (mensaje / 100) * self.altura_maxima
-            else:  # Altura directamente
-                nuevo_valor = mensaje
-    
-            # Actualizar los valores de la gráfica
-            self.data["values"] = np.roll(self.data["values"], -1)  # Desplazar los datos
-            self.data["values"][-1] = nuevo_valor  # Agregar el nuevo valor al final
-    
-            # Actualizar los datos de la gráfica
-            self.line.set_data(self.data["time"], self.data["values"])
-            if self.fill:
-                self.fill.remove()  # Eliminar el área anterior si existe
-            self.fill = self.ax.fill_between(self.data["time"], self.data["values"], color="cyan", alpha=0.3)
-    
-            # Redibujar la gráfica
-            self.canvas.draw()
-    
+            else:
+                self.ax.set_ylim(0, 1)  # Valor predeterminado
+            self.ax.set_ylabel("Volumen (L)")
+        elif unidad == "%":  # Porcentaje
+            self.ax.set_ylim(0, 100)
+            self.ax.set_ylabel("Porcentaje (%)")
+
+        # Generar un nuevo valor para la variable mensaje
+        mensaje = self.generar_valor_mensaje()
+
+        # Convertir el valor de mensaje según la unidad seleccionada
+        if unidad == "L":  # Convertir volumen a altura
+            nuevo_valor = (mensaje * 1000) / (math.pi * ((self.diametro / 2) ** 2))
+        elif unidad == "%":  # Convertir porcentaje a altura
+            nuevo_valor = (mensaje / 100) * self.altura_maxima
+        else:  # Altura directamente
+            nuevo_valor = mensaje
+
+        # Actualizar los valores de la gráfica
+        self.data["values"] = np.roll(self.data["values"], -1)  # Desplazar los datos
+        self.data["values"][-1] = nuevo_valor  # Agregar el nuevo valor al final
+
+        # Actualizar los datos de la gráfica
+        self.line.set_data(self.data["time"], self.data["values"])
+        if self.fill:
+            self.fill.remove()  # Eliminar el área anterior si existe
+        self.fill = self.ax.fill_between(self.data["time"], self.data["values"], color="cyan", alpha=0.3)
+
+        # Redibujar la gráfica
+        self.canvas.draw()
+        
     def generar_valor_mensaje(self):
             """Genera un valor aleatorio para la variable mensaje"""
             if self.selector.currentText().strip() == "cm":  # Altura
