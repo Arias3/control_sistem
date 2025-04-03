@@ -1,13 +1,14 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 
+
 // Configuración de la red WiFi
 const char* ssid = "JUANET";
 const char* password = "5241856500";
 
 // Configuración del servidor WebSocket
 // (Nota: Esta IP puede cambiar según tu red; para pruebas, asegúrate de que sea la IP del servidor Python)
-const char* websocket_server = "192.168.1.14";
+const char* websocket_server = "192.168.0.100";
 const uint16_t websocket_port = 8765;
 
 WebSocketsClient webSocket;
@@ -22,7 +23,7 @@ int direction = 1;       // 1 = subiendo, -1 = bajando
 int actuatorPower = 0;   // Potencia del actuador (-100 a 100)
 
 unsigned long previousMillis = 0;
-const long interval = 1000;  // Actualizar cada 1 segundo
+const long interval = 500;  // Actualizar cada 1 segundo
 
 // Manejo de eventos del WebSocket
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {

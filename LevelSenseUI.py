@@ -1,7 +1,8 @@
+import csv
 import sys
 import math
-import random
-import json
+import subprocess
+import atexit
 import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QMessageBox, QHBoxLayout,
@@ -11,32 +12,7 @@ from PyQt5.QtGui import QPixmap, QFont, QColor, QDoubleValidator
 from PyQt5.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from websocket_server import WebsocketServer
-import threading
-
-# ========================== BACKEND - WEBSOCKET ==========================
-
-
-# Función que se ejecuta cuando un cliente se conecta
-def new_client(client, server):
-    print(f"Cliente conectado: {client['id']}")
-
-# Función que se ejecuta cuando se recibe un mensaje
-def message_received(client, server, message):
-    print(f"R: {message}")
-
-# Crear el servidor WebSocket
-def start_websocket_server():
-    server = WebsocketServer(host="0.0.0.0", port=8765)
-    server.set_fn_new_client(new_client)
-    server.set_fn_message_received(message_received)
-    print("Servidor WebSocket corriendo en 0.0.0.0:8765")
-    server.run_forever()
-
-# Iniciar el servidor WebSocket en un hilo separado
-websocket_thread = threading.Thread(target=start_websocket_server, daemon=True)
-websocket_thread.start()
-
+from matplotlib.ticker import MaxNLocator
 
 # ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
 
@@ -136,16 +112,60 @@ class ModernWindow(QMainWindow):
         self.altura_maxima = 0
         self.volumen_maximo = 0
 
+        #Llamamos al backend
+        try:
+            self.backend_process = subprocess.Popen(["python", "Backend.py"])
+        except FileNotFoundError:
+            print("Error: No se encontró el archivo Backend.py.")
+        except Exception as e:
+            print(f"Error al iniciar el backend: {e}") 
+
         # Configuración de la ventana principal
         self.setWindowTitle("Level Sense IU")
-        self.setMinimumSize(800, 600)
-        self.resize(1200, 700)
+        self.setMinimumSize(1000, 600)
+        self.resize(1400, 600)
 
         # Crear interfaz gráfica
         self.setup_ui()
 
         # Ejecutar diálogo inicial
         self.abrir_dialogo()
+
+        # Configurar el temporizador para leer el archivo CSV
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.leer_csv)  # Conectar el temporizador al método leer_csv
+        self.timer.start(500)  # Leer el archivo cada 1000 ms (1 segundo)
+
+    def leer_csv(self):
+        """Lee el archivo CSV y actualiza la interfaz gráfica con los datos más recientes."""
+        try:
+            with open("data.csv", mode="r") as file:
+                reader = list(csv.DictReader(file))
+                if reader:
+                    last_row = reader[-1]  # Leer la última fila
+                    nivel = float(last_row["Nivel"])
+                    potencia = float(last_row["Potencia"])
+
+                    # Actualizar los valores en la interfaz gráfica
+                    if hasattr(self, "labels"):
+                        self.labels["Altura"].setText(f"{nivel:.1f} cm")
+                        self.labels["Volumen"].setText(f"{(math.pi * (self.diametro / 2) ** 2 * nivel) / 1000:.1f} L")
+                        porcentaje = (nivel / self.altura_maxima) * 100 if self.altura_maxima > 0 else 0
+                        self.labels["Porcentaje"].setText(f"{porcentaje:.1f}%")
+
+                    if hasattr(self, "fill_progress") and hasattr(self, "empty_progress"):
+                        if potencia >= 0:
+                            self.fill_progress.setValue(int(potencia))
+                            self.empty_progress.setValue(0)
+                        else:
+                            self.fill_progress.setValue(0)
+                            self.empty_progress.setValue(abs(int(potencia)))
+                    pass  # No imprimir nada en caso de éxito
+                
+        except FileNotFoundError:
+            print("Archivo CSV no encontrado.")
+        except Exception as e:
+            print(f"Error al leer el archivo CSV: {e}")
 
     def abrir_dialogo(self):
         """Abre el diálogo para configurar el contenedor."""
@@ -481,9 +501,21 @@ class ModernWindow(QMainWindow):
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xlim(-100, 0)  # Tiempo en el eje X
-        self.ax.set_ylim(0, 1)  # Se ajustará dinámicamente
+        self.ax.set_ylim(0, self.altura_maxima if self.altura_maxima > 0 else 1)  # Altura predeterminada
         self.ax.set_xlabel("Tiempo (s)")
         self.ax.set_ylabel("Altura (cm)")
+        self.line, = self.ax.plot([], [], color="blue", alpha=0.6)
+        self.fill = self.ax.fill_between([], [], color="cyan", alpha=0.3)
+
+        # Configurar la cuadrícula
+        self.ax.grid(
+            color="gray",       # Color de las líneas de la cuadrícula
+            linestyle="--",     # Estilo de línea (líneas punteadas)
+            linewidth=0.5,      # Grosor de las líneas
+            alpha=0.5           # Transparencia (0.0 = completamente transparente, 1.0 = completamente opaco)
+        )
+
+        # Crear la línea y el área sombreada
         self.line, = self.ax.plot([], [], color="blue", alpha=0.6)
         self.fill = self.ax.fill_between([], [], color="cyan", alpha=0.3)
 
@@ -508,10 +540,10 @@ class ModernWindow(QMainWindow):
         # Conectar el cambio de selección del menú al cambio de gráfica
         unit_menu.currentIndexChanged.connect(self.actualizar_grafica)
 
-        # Iniciar un temporizador para actualizar la gráfica cada segundo
-        self.timer = QTimer()
-        self.timer.timeout.connect(lambda: self.actualizar_grafica(unit_menu.currentText().strip()))
-        self.timer.start(1000)  # Actualizar cada segundo
+        # Iniciar un temporizador para actualizar la gráfica cada 500ms
+        self.graph_timer = QTimer()
+        self.graph_timer.timeout.connect(lambda: self.actualizar_grafica(unit_menu.currentText().strip()))
+        self.graph_timer.start(500)  # Actualizar cada 500ms
 
         # Agregar las secciones izquierda y derecha al layout de contenido
         content_layout.addWidget(left_widget, 30)
@@ -519,57 +551,62 @@ class ModernWindow(QMainWindow):
         main_layout.addStretch()
 
     def actualizar_grafica(self, unidad):
-        """Actualiza la gráfica y los valores según la unidad seleccionada"""
+        """Actualiza la gráfica y los valores según la unidad seleccionada leyendo datos del archivo CSV"""
         # Ajustar el eje Y según la unidad seleccionada
         if unidad == "cm":  # Altura
-            if self.altura_maxima > 0:
-                self.ax.set_ylim(0, self.altura_maxima)
-            else:
-                self.ax.set_ylim(0, 1)  # Valor predeterminado
+            self.ax.set_ylim(0, self.altura_maxima if self.altura_maxima > 0 else 1)
             self.ax.set_ylabel("Altura (cm)")
+            self.ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # Mostrar 10 divisiones en el eje Y
         elif unidad == "L":  # Volumen
-            if self.volumen_maximo > 0:
-                self.ax.set_ylim(0, self.volumen_maximo)
-            else:
-                self.ax.set_ylim(0, 1)  # Valor predeterminado
+            self.ax.set_ylim(0, self.volumen_maximo if self.volumen_maximo > 0 else 1)
             self.ax.set_ylabel("Volumen (L)")
+            self.ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # Mostrar 10 divisiones en el eje Y
         elif unidad == "%":  # Porcentaje
             self.ax.set_ylim(0, 100)
             self.ax.set_ylabel("Porcentaje (%)")
+            self.ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # Mostrar 10 divisiones en el eje Y
 
-        # Generar un nuevo valor para la variable mensaje
-        mensaje = self.generar_valor_mensaje()
+        # Configurar el eje X
+        self.ax.set_xlim(-100, 0)  # Tiempo en el eje X
+        self.ax.xaxis.set_major_locator(MaxNLocator(nbins=20))  # Mostrar 10 divisiones en el eje X
 
-        # Convertir el valor de mensaje según la unidad seleccionada
-        if unidad == "L":  # Convertir volumen a altura
-            nuevo_valor = (mensaje * 1000) / (math.pi * ((self.diametro / 2) ** 2))
-        elif unidad == "%":  # Convertir porcentaje a altura
-            nuevo_valor = (mensaje / 100) * self.altura_maxima
-        else:  # Altura directamente
-            nuevo_valor = mensaje
+        try:
+            # Leer el archivo CSV
+            with open("data.csv", mode="r") as file:
+                reader = list(csv.DictReader(file))
+                if reader:
+                    # Leer los últimos 100 datos
+                    niveles = [float(row["Nivel"]) for row in reader[-100:]]
 
-        # Actualizar los valores de la gráfica
-        self.data["values"] = np.roll(self.data["values"], -1)  # Desplazar los datos
-        self.data["values"][-1] = nuevo_valor  # Agregar el nuevo valor al final
+                    # Convertir los niveles según la unidad seleccionada
+                    if unidad == "L":  # Convertir altura a volumen
+                        valores = [
+                            (math.pi * ((self.diametro / 2) ** 2) * nivel) / 1000
+                            for nivel in niveles
+                        ]
+                    elif unidad == "%":  # Convertir altura a porcentaje
+                        valores = [
+                            (nivel / self.altura_maxima) * 100 if self.altura_maxima > 0 else 0
+                            for nivel in niveles
+                        ]
+                    else:  # Altura directamente
+                        valores = niveles
 
-        # Actualizar los datos de la gráfica
-        self.line.set_data(self.data["time"], self.data["values"])
-        if self.fill:
-            self.fill.remove()  # Eliminar el área anterior si existe
-        self.fill = self.ax.fill_between(self.data["time"], self.data["values"], color="cyan", alpha=0.3)
+                    # Actualizar los valores de la gráfica
+                    self.data["values"] = valores
 
-        # Redibujar la gráfica
-        self.canvas.draw()
-        
-    def generar_valor_mensaje(self):
-            """Genera un valor aleatorio para la variable mensaje"""
-            if self.selector.currentText().strip() == "cm":  # Altura
-                return random.uniform(0, self.altura_maxima)
-            elif self.selector.currentText().strip() == "L":  # Volumen
-                return random.uniform(0, self.volumen_maximo)
-            elif self.selector.currentText().strip() == "%":  # Porcentaje
-                return random.uniform(0, 100)
-            return 0.0   
+                    # Actualizar los datos de la gráfica
+                    self.line.set_data(self.data["time"], self.data["values"])
+                    if self.fill:
+                        self.fill.remove()  # Eliminar el área anterior si existe
+                    self.fill = self.ax.fill_between(self.data["time"], self.data["values"], color="cyan", alpha=0.3)
+
+                    # Redibujar la gráfica
+                    self.canvas.draw()
+        except FileNotFoundError:
+            print("Archivo CSV no encontrado.")
+        except Exception as e:
+            print(f"Error al leer el archivo CSV: {e}")    
     
     # Función para manejar el evento del botón
     def enviar_datos(self):
