@@ -14,6 +14,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
+from Backend import enviar_mensaje
+
 # ========================== FRONTEND - INTERFAZ GRÁFICA ==========================
 
 class CustomDialog(QDialog):
@@ -95,6 +97,10 @@ class CustomDialog(QDialog):
                 print(f"Altura máxima: {self.altura_maxima} cm")
                 print(f"Diámetro: {self.diametro} cm")
                 print(f"Volumen máximo: {self.volumen_maximo:.2f} L")
+
+                # Generar el mensaje para el ESP
+                mensaje = f"c:{self.altura_maxima},{self.diametro}"
+                enviar_mensaje(mensaje)  # Enviar el mensaje al ESP
                 
                 # Mostrar mensaje de éxito
                 self.altura_error.setStyleSheet("color: green;")
@@ -134,7 +140,36 @@ class ModernWindow(QMainWindow):
         # Configurar el temporizador para leer el archivo CSV
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.leer_csv)  # Conectar el temporizador al método leer_csv
-        self.timer.start(500)  # Leer el archivo cada 1000 ms (1 segundo)
+        self.timer.start(500)  # Leer el archivo CSV cada 500 ms
+
+    def closeEvent(self, event):
+        """Sobrescribe el evento de cierre de la ventana."""
+        # Detener el proceso del backend si está en ejecución
+        if hasattr(self, "backend_process") and self.backend_process:
+            self.backend_process.terminate()
+            self.backend_process.wait()  # Esperar a que el proceso termine
+            print("Backend detenido.")
+
+        # Intentar cerrar la terminal del servidor backend
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "python.exe"], check=True)
+            print("Terminal del servidor backend cerrada.")
+        except Exception as e:
+            print(f"Error al cerrar la terminal del servidor backend: {e}")
+
+        # Mostrar un mensaje de confirmación antes de cerrar
+        respuesta = QMessageBox.question(
+            self,
+            "Confirmar salida",
+            "¿Está seguro de que desea cerrar la aplicación?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if respuesta == QMessageBox.Yes:
+            event.accept()  # Permitir el cierre
+        else:
+            event.ignore()  # Cancelar el cierre
 
     def leer_csv(self):
         """Lee el archivo CSV y actualiza la interfaz gráfica con los datos más recientes."""
@@ -161,7 +196,7 @@ class ModernWindow(QMainWindow):
                             self.fill_progress.setValue(0)
                             self.empty_progress.setValue(abs(int(potencia)))
                     pass  # No imprimir nada en caso de éxito
-                
+
         except FileNotFoundError:
             print("Archivo CSV no encontrado.")
         except Exception as e:
@@ -185,6 +220,10 @@ class ModernWindow(QMainWindow):
             self.diametro = dialog.diametro
             self.volumen_maximo = (math.pi * ((self.diametro / 2) ** 2) * self.altura_maxima) / 1000  # Convertir de cm³ a L
             print(f"Nuevos valores recibidos: Altura={self.altura_maxima} cm, Diámetro={self.diametro} cm, Volumen Máximo={self.volumen_maximo:.2f} L")
+
+            # Generar el mensaje para el ESP
+            mensaje = f"c:{self.altura_maxima},{self.diametro}"
+            #enviar_mensaje(mensaje)  # Enviar el mensaje al ESP
 
     def setup_ui(self):
         pass  # Mantener el método setup_ui como está en el código original
@@ -661,8 +700,11 @@ class ModernWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error", "Por favor, seleccione una unidad válida.")
                 return
+            # Generar el mensaje para el ESP
+            mensaje = f"s:{altura_calculada:.2f}"
+            enviar_mensaje(mensaje)  # Enviar el mensaje al ESP
             # Imprimir la altura calculada en la consola
-            print(f"Altura calculada: {altura_calculada:.2f} cm")
+            print(f"Altura calculada enviada: {altura_calculada:.2f} cm")
 
         except ValueError:
             QMessageBox.warning(self, "Error", "Por favor, ingrese un número válido.")
