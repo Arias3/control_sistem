@@ -606,16 +606,20 @@ class ModernWindow(QMainWindow):
             self.ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # Mostrar 10 divisiones en el eje Y
 
         # Configurar el eje X
-        self.ax.set_xlim(-100, 0)  # Tiempo en el eje X
-        self.ax.xaxis.set_major_locator(MaxNLocator(nbins=20))  # Mostrar 10 divisiones en el eje X
+        self.ax.set_xlim(-100, 0)  # Tiempo en el eje X (de -100 segundos a 0 segundos)
+        self.ax.set_xlabel("Tiempo (s)")
+        self.ax.xaxis.set_major_locator(MaxNLocator(nbins=10))  # Mostrar 10 divisiones en el eje X
 
         try:
             # Leer el archivo CSV
             with open("data.csv", mode="r") as file:
                 reader = list(csv.DictReader(file))
                 if reader:
-                    # Leer los últimos 100 datos
-                    niveles = [float(row["Nivel"]) for row in reader[-100:]]
+                    # Leer todos los datos
+                    niveles = [float(row["Nivel"]) for row in reader]
+
+                    # Generar un rango de tiempo continuo para los últimos 100 segundos
+                    tiempo = np.linspace(-100, 0, len(niveles))  # Distribuir todos los valores en 100 segundos
 
                     # Convertir los niveles según la unidad seleccionada
                     if unidad == "L":  # Convertir altura a volumen
@@ -631,8 +635,9 @@ class ModernWindow(QMainWindow):
                     else:  # Altura directamente
                         valores = niveles
 
-                    # Actualizar los valores de la gráfica
-                    self.data["values"] = valores
+                    # Actualizar los datos de la gráfica
+                    self.data["time"] = tiempo  # Tiempo en segundos
+                    self.data["values"] = valores  # Valores correspondientes
 
                     # Actualizar los datos de la gráfica
                     self.line.set_data(self.data["time"], self.data["values"])
@@ -645,7 +650,7 @@ class ModernWindow(QMainWindow):
         except FileNotFoundError:
             print("Archivo CSV no encontrado.")
         except Exception as e:
-            print(f"Error al leer el archivo CSV: {e}")    
+            print(f"Error al leer el archivo CSV: {e}")
     
     # Función para manejar el evento del botón
     def enviar_datos(self):
@@ -670,26 +675,26 @@ class ModernWindow(QMainWindow):
 
             # Validar según la unidad seleccionada
             if unidad == "L":  # Volumen
-                if nivel > self.volumen_maximo:
+                if nivel > (self.volumen_maximo - 2):  # Permitir hasta dos unidades menos que el volumen máximo
                     QMessageBox.warning(
                         self,
                         "Error",
-                        f"El volumen no puede exceder el máximo permitido ({self.volumen_maximo:.1f} L)."
+                        f"El volumen no puede exceder el nivel seguro del máximo permitido ({self.volumen_maximo - 2:.1f} L)."
                     )
                     return
                 altura_calculada = (nivel * 1000) / (math.pi * ((self.diametro / 2) ** 2))
 
             elif unidad == "cm":  # Altura
-                if nivel > self.altura_maxima:
+                if nivel > (self.altura_maxima - 2):
                     QMessageBox.warning(
                         self,
                         "Error",
-                        f"La altura no puede exceder la altura máxima del contenedor ({self.altura_maxima:.1f} cm)."
+                        f"La altura no puede exceder el nivel seguro de la altura máxima del contenedor ({self.altura_maxima:.1f} cm)."
                     )
                     return
                 altura_calculada = nivel
             elif unidad == "%":  # Porcentaje
-                if nivel > 100:
+                if nivel > 96:
                     QMessageBox.warning(
                         self,
                         "Error",

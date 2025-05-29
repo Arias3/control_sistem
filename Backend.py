@@ -35,7 +35,7 @@ def message_received(client, server, message):
             # Eliminar encabezados y mantener solo los últimos 100 datos
             if len(rows) > 1:
                 rows = rows[1:]  # Eliminar encabezados
-            if len(rows) >= 100:
+            if len(rows) >= 1000:
                 rows.pop(0)  # Eliminar el dato más antiguo
 
             # Agregar el nuevo dato al final

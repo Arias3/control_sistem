@@ -1,17 +1,14 @@
 import csv
-import time
+import os
 
 # Archivo CSV donde se almacenarán los datos simulados
 CSV_FILE = "data.csv"
 
 # Crear el archivo CSV con encabezados si no existe
-try:
-    with open(CSV_FILE, mode="r", newline="") as file:
-        pass
-except FileNotFoundError:
+if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, mode="w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["Nivel", "Potencia"])
+        writer.writerow(["Nivel", "Potencia"])  # Encabezados
 
 # Simular llenado y vaciado del recipiente
 nivel = 0.0
@@ -19,35 +16,14 @@ potencia = -100
 direction = 1  # 1 = subiendo, -1 = bajando
 
 try:
-    while True:
-        # Leer los datos existentes del archivo CSV
-        data = []
-        try:
-            with open(CSV_FILE, mode="r") as file:
-                reader = csv.reader(file)
-                data = list(reader)
-        except FileNotFoundError:
-            pass
+    data = []
 
-        # Eliminar encabezados y mantener solo los últimos 50 datos
-        if len(data) > 1:
-            data = data[1:]  # Eliminar encabezados
-        if len(data) >= 100:
-            data.pop(0)  # Eliminar el dato más antiguo
-
+    while len(data) < 1000:  # Generar exactamente 1000 datos
         # Redondear la potencia a un decimal
         potencia = round(potencia, 1)
 
         # Agregar el nuevo dato
         data.append([nivel, potencia])
-
-        # Escribir los datos actualizados en el archivo CSV
-        with open(CSV_FILE, mode="w", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(["Nivel", "Potencia"])  # Encabezados
-            writer.writerows(data)  # Escribir los datos actualizados
-
-        print(f"Datos simulados: Nivel={nivel}, Potencia={potencia}")
 
         # Actualizar nivel y potencia
         nivel += direction * 1.0
@@ -60,8 +36,13 @@ try:
             nivel = 0.0
             direction = 1
 
-        # Esperar 1 segundo antes de la siguiente actualización
-        time.sleep(0.5)
+    # Escribir los datos generados en el archivo CSV
+    with open(CSV_FILE, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Nivel", "Potencia"])  # Encabezados
+        writer.writerows(data)  # Escribir los datos generados
 
-except KeyboardInterrupt:
-    print("\nEjecución interrumpida por el usuario. Saliendo del programa...")
+    print(f"Generación completada: {len(data)} datos almacenados en '{CSV_FILE}'")
+
+except Exception as e:
+    print(f"Error durante la generación de datos: {e}")
