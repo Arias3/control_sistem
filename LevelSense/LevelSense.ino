@@ -35,6 +35,15 @@ float power=0.0; // potencia de los motores
 long duration;
 float distance;
 
+// --- PID ---
+float Kp = 0.15;
+float Ki = 0.02;
+float Kd = 0.05;
+float integral = 0.0;
+float prev_error = 0.0;
+unsigned long last_time = 0;
+int bomba_estado = 0; // 0=apagada, 1=llenando, -1=vaciando
+
 // ==== Función de conexión WiFi ====
 void connectToWiFi() {
   Serial.print("Conectando a WiFi: ");
@@ -81,35 +90,65 @@ void readUltrasonicSensor() {
   Serial.println(" cm");
 }
 
-// ==== Función para controlar las bombas ====
 void controlMotors() {
-  // Si el nivel está por debajo del rango seguro, llenar
-  if (waterLevel < setpoint - hysteresis) {
-    Serial.println("Llenando el recipiente...");
-    digitalWrite(IN1, HIGH);  // Apagar bomba de vaciado
-    digitalWrite(IN2, LOW); // Activar bomba de llenado
-    analogWrite(PWM1, 255);  // Velocidad moderada
-    analogWrite(PWM2, 0);    // Apagar bomba de vaciado
-    power = 100; // potencia maxima del motor
-  }
-  // Si el nivel está por encima del rango seguro, vaciar
-  else if (waterLevel > setpoint + hysteresis) {
-    Serial.println("Vaciando el recipiente...");
-    digitalWrite(IN1, LOW); // Activar bomba de vaciado
-    digitalWrite(IN2, HIGH);  // Apagar bomba de llenado
-    analogWrite(PWM1, 0);  // Velocidad moderada
-    analogWrite(PWM2, 255);    // Apagar bomba de llenado
-    power = -100; // potencia maxima del motor
-  }
-  // Si el nivel está dentro del rango seguro, apagar ambas bombas
-  else {
-    Serial.println("Nivel dentro del rango deseado. Apagando bombas.");
+  float error = setpoint - waterLevel;
+  unsigned long now = millis();
+  float dt = 0.1; // 100 ms en segundos
+
+  // Integral y derivada
+  integral += error * dt;
+  float derivative = (error - prev_error) / dt;
+
+  // Ley de control PID
+  float u = Kp * error + Ki * integral + Kd * derivative;
+
+  // Saturación de la señal de control
+  if (u > 1.0) u = 1.0;
+  if (u < -1.0) u = -1.0;
+
+  // --- HISTERESIS ---
+  float upper = setpoint + hysteresis / 2.0;
+  float lower = setpoint - hysteresis / 2.0;
+
+  if (waterLevel < lower) {
+    bomba_estado = 1; // Llenar
+  } else if (waterLevel > upper) {
+    bomba_estado = -1; // Vaciar
+  } // Si está dentro de la banda, mantiene el último estado
+
+  if (bomba_estado == 1 && u > 0.01) {
+    // Llenar
+    int pwm = (int)(u * 255.0);
+    if (pwm < 65) pwm = 65;
+    if (pwm > 255) pwm = 255;
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(PWM1, pwm);
+    analogWrite(PWM2, 0);
+    power = u * 100.0;
+    Serial.println("PID: Llenando");
+  } else if (bomba_estado == -1 && u < -0.01) {
+    // Vaciar
+    int pwm = (int)(-u * 255.0);
+    if (pwm < 65) pwm = 65;
+    if (pwm > 255) pwm = 255;
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    analogWrite(PWM1, 0);
+    analogWrite(PWM2, pwm);
+    power = u * 100.0;
+    Serial.println("PID: Vaciando");
+  } else {
+    // Apagar ambas bombas
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, LOW);
     analogWrite(PWM1, 0);
     analogWrite(PWM2, 0);
     power = 0;
+    Serial.println("PID: Apagando bombas");
   }
+
+  prev_error = error;
 }
 
 // ==== Manejo de eventos del WebSocket ====
